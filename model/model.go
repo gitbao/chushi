@@ -1,70 +1,43 @@
-package main
+package model
 
 import (
-    "github.com/jinzhu/gorm"
-    _ "github.com/lib/pq"
+	"github.com/jinzhu/gorm"
+	_ "github.com/lib/pq"
 )
-var db gorm.DB
 
-func init() {
+var DB gorm.DB
 
+type Server struct {
+	Id         int64
+	Ip         string
+	InstanceId string
+	Kitchen    Kitchen
+	XiaoLong   XiaoLong
+	IsRouter   bool
 }
 
-
-
-type Config struct {
-    BaoId   int64
-    Port    int64
-    EnvVars []EnvVar
+type Kitchen struct {
+	Id       int64
+	ServerId int64
 }
 
-type EnvVar struct {
-    ConfigId int64
-    Key      string
-    Value    string
+type XiaoLong struct {
+	Id       int64
+	ServerId int64
+	Dockers  []Docker
 }
 
-type Location struct {
-    Id          int64
-    BaoId       int64
-    Subdomain   string
-    Destination string
-}
-
-type Bao struct {
-    Id         int64
-    GistId     string `sql:"type:text;"`
-    Url        string `sql:"type:text;"`
-    Console    string `sql:"type:text;"`
-    IsComplete bool
-    GitPullUrl string `sql:"type:text;"`
-    BaoFileUrl string `sql:"type:text;"`
-    Location   Location
-    Files      []File
-    Config     Config
-}
-
-type File struct {
-    Id       int64
-    BaoId    int64
-    Filename string
-    Language string
-    RawUrl   string
+type Docker struct {
+	Id string
 }
 
 func init() {
 
-    var err error
-    DB, err = gorm.Open("postgres", "dbname=gitbaotest sslmode=disable")
-    if err != nil {
-        panic(err)
-    }
+	var err error
+	DB, err = gorm.Open("postgres", "dbname=chushitest sslmode=disable")
+	if err != nil {
+		panic(err)
+	}
 
-    DB.DropTableIfExists(&Config{})
-    DB.DropTableIfExists(&EnvVar{})
-    DB.DropTableIfExists(&Location{})
-    DB.DropTableIfExists(&Bao{})
-    DB.DropTableIfExists(&File{})
-
-    DB.AutoMigrate(&Location{}, &Bao{}, &File{}, &EnvVar{}, &Config{})
+	DB.DropTableIfExists(&Server{})
 }
