@@ -46,6 +46,7 @@ source .profile
 mkdir -p golang
 go get github.com/gitbao/gitbao
 cd /home/ubuntu/golang/src/
+#sudo rm /etc/nginx/sites-available/default
 go get ./...
 `
 }
@@ -57,13 +58,15 @@ source .profile
 `
 	if kind == "kitchen" {
 		s.body += `
+go get -u github.com/gitbao/gitbao
 go install github.com/gitbao/gitbao/cmd/kitchen
 cd /home/ubuntu/golang/src/github.com/gitbao/gitbao/cmd/kitchen/
+wget https://raw.githubusercontent.com/gitbao/chushi/master/nginx/kitchen
+sudo mv kitchen /etc/nginx/sites-enabled/
 touch server.log
 /home/ubuntu/golang/bin/kitchen > server.log 2>&1 &
-lsof -wni
+sudo service nginx restart
 `
-
 	}
 }
 
@@ -139,7 +142,7 @@ func Update(kind string, server *model.Server) error {
 	var err error
 	var script shellScript
 
-	script.body = "killall " + kind + "\n"
+	script.body = "killall " + kind + "\n echo \"process killed\""
 	script.initServerByKind(kind)
 
 	session, err := sshConnect(server.Ip)
