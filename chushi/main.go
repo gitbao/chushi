@@ -2,20 +2,32 @@ package main
 
 import (
 	"fmt"
+	"log"
 	"os"
+	"os/exec"
+	"strconv"
 
+	tm "github.com/buger/goterm"
 	"github.com/codegangsta/cli"
 	"github.com/gitbao/chushi/ec2"
-	"github.com/gitbao/chushi/model"
 	"github.com/gitbao/chushi/shell"
+	"github.com/gitbao/gitbao/model"
+)
+
+const (
+	isProduction = false
 )
 
 func main() {
-
 	err := model.DB.DB().Ping()
 	if err != nil {
 		fmt.Println("Error pinging database. Do you have a postgres database set up called chushi?")
 		return
+	}
+	if isProduction {
+		os.Setenv("GO_ENV", "production")
+		model.Close()
+		model.Connect()
 	}
 	app := cli.NewApp()
 	app.Name = "Chushi"
@@ -30,28 +42,155 @@ func main() {
 			ShortName: "l",
 			Usage:     "List everything",
 			Action: func(c *cli.Context) {
-				println("added task: ", c.Args().First())
-				ec2.CreateInstance()
+				var servers []model.Server
+				query := model.DB.Find(&servers)
+				if query.Error != nil {
+					log.Fatal(query.Error)
+				}
+
+				totals := tm.NewTable(0, 10, 5, ' ', 0)
+				fmt.Fprintf(totals, "Id\tInstanceId\tKind\tIp\n")
+
+				for _, value := range servers {
+					fmt.Fprintf(totals, "%d\t%s\t%s\t%s\n", value.Id, value.InstanceId, value.Kind, value.Ip)
+				}
+				tm.Println(totals)
+				tm.Flush()
+
 			},
 		},
 		{
-			Name:      "create",
+			Name:      "new_ec2",
 			ShortName: "c",
 			Usage:     "create something",
 			Action: func(c *cli.Context) {
-				kind := c.Args().First()
-				if kind != "kitchen" && kind != "router" && kind != "xialong" {
-					fmt.Println("You need to specify a server type.",
-						"Choose kitchen, router, or xiaolong.")
+				fmt.Println("Creating instance:")
+				server := ec2.CreateInstance()
+				model.DB.Create(&server)
+				fmt.Println("Created server with Id:", server.Id)
+			},
+		},
+		{
+			Name:      "assign",
+			ShortName: "a",
+			Usage:     "create something",
+			Action: func(c *cli.Context) {
+				args := c.Args()
+
+				serverId, err := strconv.Atoi(args[0])
+				if err != nil {
+					log.Fatal(err)
 					return
 				}
-				fmt.Println("Creating a", kind, "server:")
-				fmt.Println("Creating instance:")
-				// server := ec2.CreateInstance()
-				server := model.Server{
-					Ip: "54.146.69.23",
+				var server model.Server
+				query := model.DB.Find(&server, int64(serverId))
+				if query.Error != nil {
+					log.Fatal(query.Error)
+					return
 				}
-				shell.RunShellScript(kind, &server)
+
+				kind := args[1]
+				fmt.Println("Assigning a", kind, "server:")
+				fmt.Println("Created server with Id:", server.Id)
+				shell.Initialize(kind, &server)
+				server.Kind = kind
+				model.DB.Save(&server)
+			},
+		},
+		{
+			Name:      "update",
+			ShortName: "u",
+			Usage:     "create something",
+			Action: func(c *cli.Context) {
+				args := c.Args()
+
+				serverId, err := strconv.Atoi(args[0])
+				if err != nil {
+					log.Fatal(err)
+					return
+				}
+				var server model.Server
+				query := model.DB.Find(&server, int64(serverId))
+				if query.Error != nil {
+					log.Fatal(query.Error)
+					return
+				}
+
+				fmt.Println("Created server with Id:", server.Id)
+				shell.Update(server.Kind, &server)
+			},
+		},
+		{
+			Name:  "open",
+			Usage: "create something",
+			Action: func(c *cli.Context) {
+				args := c.Args()
+
+				serverId, err := strconv.Atoi(args[0])
+				if err != nil {
+					log.Fatal(err)
+					return
+				}
+				var server model.Server
+				query := model.DB.Find(&server, int64(serverId))
+				if query.Error != nil {
+					log.Fatal(query.Error)
+					return
+				}
+				cmd := exec.Command("open", "http://"+server.Ip+":8000")
+				err = cmd.Run()
+				if err != nil {
+					log.Fatal(err)
+					return
+				}
+
+			},
+		},
+		{
+			Name:  "logs",
+			Usage: "",
+			Action: func(c *cli.Context) {
+				args := c.Args()
+
+				serverId, err := strconv.Atoi(args[0])
+				if err != nil {
+					log.Fatal(err)
+					return
+				}
+				var server model.Server
+				query := model.DB.Find(&server, int64(serverId))
+				if query.Error != nil {
+					log.Fatal(query.Error)
+					return
+				}
+
+				fmt.Println("Logs for server:", server.Id)
+				shell.Logs(&server)
+			},
+		},
+		{
+			Name:  "destroy",
+			Usage: "create something",
+			Action: func(c *cli.Context) {
+				args := c.Args()
+
+				serverId, err := strconv.Atoi(args[0])
+				if err != nil {
+					log.Fatal(err)
+					return
+				}
+				var server model.Server
+				query := model.DB.Find(&server, int64(serverId))
+				if query.Error != nil {
+					log.Fatal(query.Error)
+					return
+				}
+				err = ec2.DestroyInstance(server.InstanceId)
+				if err != nil {
+					log.Fatal(err)
+					return
+				}
+				model.DB.Delete(&server)
 
 			},
 		},

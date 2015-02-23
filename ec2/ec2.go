@@ -6,7 +6,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/gitbao/chushi/model"
+	"github.com/gitbao/gitbao/model"
 	"github.com/mitchellh/goamz/aws"
 	"github.com/mitchellh/goamz/ec2"
 )
@@ -82,7 +82,7 @@ func DestroyInstance(instanceId string) (err error) {
 	resp, err := client.TerminateInstances([]string{instanceId})
 	log.Printf("%#v\n", resp)
 	log.Printf("%#v\n", err)
-	return
+	return err
 }
 
 func GetIp(instanceId string) (publicIp string, err error) {

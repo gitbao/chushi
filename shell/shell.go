@@ -1,54 +1,173 @@
 package shell
 
 import (
+	"io/ioutil"
+	"log"
 	"os"
-	"os/exec"
-	"strings"
+	"os/user"
 
-	"github.com/gitbao/chushi/model"
+	"github.com/gitbao/gitbao/model"
+	"golang.org/x/crypto/ssh"
 )
 
-func init() {
-
+type shellScript struct {
+	body string
 }
 
-func Initialize(kind string, server *model.Server) {
+func (s *shellScript) addDependencies() {
+	s.body += `
+export DEBIAN_FRONTEND=noninteractive
+sudo apt-get update
+sudo apt-get -y install golang
+sudo apt-get -y install git
+sudo apt-get -y install nginx
+`
+}
+
+func (s *shellScript) addEnvVariables() {
+	localKeysToAdd := []string{
+		"GITBAO_DBNAME",
+		"GITBAO_DBUSERNAME",
+		"GITBAO_DBHOST",
+		"GITBAO_DBPASSWORD",
+		"GITHUB_GIST_ACCESS_KEY",
+	}
+	for _, value := range localKeysToAdd {
+		s.body += getLocalEnvVarForScript(value)
+	}
+	s.body += genEnvVarString("GO_ENV", "production")
+	s.body += genEnvVarString("GOPATH", "$HOME/golang/")
+}
+
+func (s *shellScript) setupGitbao() {
+	s.addEnvVariables()
+	s.body += `
+source .profile
+mkdir -p golang
+go get github.com/gitbao/gitbao
+cd /home/ubuntu/golang/src/
+go get ./...
+`
+}
+
+func (s *shellScript) initServerByKind(kind string) {
+	s.body += `
+cd /home/ubuntu/
+source .profile
+`
+	if kind == "kitchen" {
+		s.body += `
+go install github.com/gitbao/gitbao/cmd/kitchen
+cd /home/ubuntu/golang/src/github.com/gitbao/gitbao/cmd/kitchen/
+touch server.log
+/home/ubuntu/golang/bin/kitchen > server.log 2>&1 &
+lsof -wni
+`
+
+	}
+}
+
+var homePath string
+var chushiRoot string
+
+func init() {
 	goPath := os.Getenv("GOPATH")
-	chushiRoot := goPath + "src/github.com/gitbao/chushi/"
-	homePath := os.Getenv("HOME")
+	chushiRoot = goPath + "src/github.com/gitbao/chushi/"
+	usr, _ := user.Current()
+	homePath = usr.HomeDir
+}
 
-	storeSshFingerprint := exec.Command("ssh-keyscan",
-		"-t", "ssh-rsa", server.Ip)
-	ipAndFingerprint, err := storeSshFingerprint.Output()
+func getLocalEnvVarForScript(key string) string {
+	value := os.Getenv(key)
+	return genEnvVarString(key, value)
+}
 
-	f, err := os.OpenFile(homePath+"/.ssh/known_hosts", os.O_APPEND|os.O_WRONLY, 0600)
+func genEnvVarString(key, value string) string {
+	return "echo \"export " + key + "=" + value + "\" >> .profile\n"
+}
+
+func sshConnect(ip string) (session *ssh.Session, err error) {
+	privateBytes, err := ioutil.ReadFile(homePath + "/dev.pem")
+	if err != nil {
+		panic("Failed to load private key")
+	}
+
+	private, err := ssh.ParsePrivateKey(privateBytes)
+	if err != nil {
+		panic("Failed to parse private key")
+	}
+
+	config := &ssh.ClientConfig{
+		User: "ubuntu",
+		Auth: []ssh.AuthMethod{ssh.PublicKeys(private)},
+	}
+
+	client, err := ssh.Dial("tcp", ip+":22", config)
 	if err != nil {
 		panic(err)
 	}
 
-	if _, err = f.WriteString(string(ipAndFingerprint)); err != nil {
-		panic(err)
+	return client.NewSession()
+}
+
+func Initialize(kind string, server *model.Server) error {
+	var err error
+	var script shellScript
+
+	script.addDependencies()
+	script.setupGitbao()
+	script.initServerByKind(kind)
+
+	session, err := sshConnect(server.Ip)
+	session.Stdout = os.Stdout
+	session.Stderr = os.Stderr
+
+	err = session.Run(script.body)
+	if err != nil {
+		log.Fatal(err)
 	}
-	f.Close()
+	session.Close()
 
-	cat := exec.Command(
-		"cat",
-		chushiRoot+"shell/"+kind+".sh",
-	)
-	catOut, _ := cat.CombinedOutput()
+	if err != nil {
+		return err
+	}
 
-	cmd := exec.Command(
-		"ssh",
-		"-i", homePath+"/dev.pem",
-		"ubuntu@"+server.Ip,
-	)
-	cmd.Stdin = strings.NewReader(string(catOut))
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
+	return nil
+}
 
-	// fmt.Printf("%#v", cmd.Args)
+func Update(kind string, server *model.Server) error {
+	var err error
+	var script shellScript
 
-	cmd.Run()
+	script.body = "killall " + kind + "\n"
+	script.initServerByKind(kind)
+
+	session, err := sshConnect(server.Ip)
+	session.Stdout = os.Stdout
+	session.Stderr = os.Stderr
+
+	err = session.Run(script.body)
+	if err != nil {
+		log.Fatal(err)
+	}
+	session.Close()
+
+	return nil
+}
+
+func Logs(server *model.Server) {
+	var err error
+
+	session, err := sshConnect(server.Ip)
+	session.Stdout = os.Stdout
+	session.Stderr = os.Stderr
+
+	err = session.Run("cd /home/ubuntu/golang/" +
+		"src/github.com/gitbao/gitbao/cmd/" + server.Kind + "/ && tail -f server.log")
+	if err != nil {
+		log.Fatal(err)
+	}
+	session.Close()
 
 	return
 }
