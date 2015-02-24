@@ -46,7 +46,7 @@ source .profile
 mkdir -p golang
 go get github.com/gitbao/gitbao
 cd /home/ubuntu/golang/src/
-#sudo rm /etc/nginx/sites-available/default
+sudo rm /etc/nginx/sites-enabled/default
 go get ./...
 `
 }
@@ -55,16 +55,28 @@ func (s *shellScript) initServerByKind(kind string) {
 	s.body += `
 cd /home/ubuntu/
 source .profile
-`
-	if kind == "kitchen" {
-		s.body += `
 go get -u github.com/gitbao/gitbao
+`
+	switch kind {
+
+	case "kitchen":
+		s.body += `
 go install github.com/gitbao/gitbao/cmd/kitchen
 cd /home/ubuntu/golang/src/github.com/gitbao/gitbao/cmd/kitchen/
 wget https://raw.githubusercontent.com/gitbao/chushi/master/nginx/kitchen
 sudo mv kitchen /etc/nginx/sites-enabled/
 touch server.log
 /home/ubuntu/golang/bin/kitchen > server.log 2>&1 &
+sudo service nginx restart
+`
+	case "router":
+		s.body += `
+go install github.com/gitbao/gitbao/cmd/router
+cd /home/ubuntu/golang/src/github.com/gitbao/gitbao/cmd/router/
+wget https://raw.githubusercontent.com/gitbao/chushi/master/nginx/router
+sudo mv router /etc/nginx/sites-enabled/
+touch server.log
+/home/ubuntu/golang/bin/router > server.log 2>&1 &
 sudo service nginx restart
 `
 	}
