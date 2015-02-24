@@ -18,6 +18,20 @@ const (
 	isProduction = false
 )
 
+func getServer(args) (server model.Server) {
+	serverId, err := strconv.Atoi(args[0])
+	if err != nil {
+		log.Fatal(err)
+		return
+	}
+	query := model.DB.Find(&server, int64(serverId))
+	if query.Error != nil {
+		log.Fatal(query.Error)
+		return
+	}
+	return server
+}
+
 func main() {
 	err := model.DB.DB().Ping()
 	if err != nil {
@@ -60,9 +74,9 @@ func main() {
 			},
 		},
 		{
-			Name:      "new_ec2",
-			ShortName: "c",
-			Usage:     "create something",
+			Name:      "new",
+			ShortName: "n",
+			Usage:     "spin up a new ec2 server",
 			Action: func(c *cli.Context) {
 				fmt.Println("Creating instance:")
 				server := ec2.CreateInstance()
@@ -73,21 +87,10 @@ func main() {
 		{
 			Name:      "assign",
 			ShortName: "a",
-			Usage:     "create something",
+			Usage:     "assign a server type to a server",
 			Action: func(c *cli.Context) {
 				args := c.Args()
-
-				serverId, err := strconv.Atoi(args[0])
-				if err != nil {
-					log.Fatal(err)
-					return
-				}
-				var server model.Server
-				query := model.DB.Find(&server, int64(serverId))
-				if query.Error != nil {
-					log.Fatal(query.Error)
-					return
-				}
+				server := getServer(args)
 
 				kind := args[1]
 				fmt.Println("Assigning a", kind, "server:")
@@ -100,21 +103,11 @@ func main() {
 		{
 			Name:      "update",
 			ShortName: "u",
-			Usage:     "create something",
+			Usage:     "update a server",
 			Action: func(c *cli.Context) {
 				args := c.Args()
 
-				serverId, err := strconv.Atoi(args[0])
-				if err != nil {
-					log.Fatal(err)
-					return
-				}
-				var server model.Server
-				query := model.DB.Find(&server, int64(serverId))
-				if query.Error != nil {
-					log.Fatal(query.Error)
-					return
-				}
+				server := getServer(args)
 
 				fmt.Println("Created server with Id:", server.Id)
 				shell.Update(server.Kind, &server)
@@ -126,17 +119,8 @@ func main() {
 			Action: func(c *cli.Context) {
 				args := c.Args()
 
-				serverId, err := strconv.Atoi(args[0])
-				if err != nil {
-					log.Fatal(err)
-					return
-				}
-				var server model.Server
-				query := model.DB.Find(&server, int64(serverId))
-				if query.Error != nil {
-					log.Fatal(query.Error)
-					return
-				}
+				server := getServer(args)
+
 				cmd := exec.Command("open", "http://"+server.Ip+":8000")
 				err = cmd.Run()
 				if err != nil {
@@ -152,17 +136,7 @@ func main() {
 			Action: func(c *cli.Context) {
 				args := c.Args()
 
-				serverId, err := strconv.Atoi(args[0])
-				if err != nil {
-					log.Fatal(err)
-					return
-				}
-				var server model.Server
-				query := model.DB.Find(&server, int64(serverId))
-				if query.Error != nil {
-					log.Fatal(query.Error)
-					return
-				}
+				server := getServer(args)
 
 				fmt.Println("Logs for server:", server.Id)
 				shell.Logs(&server)
@@ -170,28 +144,18 @@ func main() {
 		},
 		{
 			Name:  "destroy",
-			Usage: "create something",
+			Usage: "destroy a server",
 			Action: func(c *cli.Context) {
 				args := c.Args()
 
-				serverId, err := strconv.Atoi(args[0])
-				if err != nil {
-					log.Fatal(err)
-					return
-				}
-				var server model.Server
-				query := model.DB.Find(&server, int64(serverId))
-				if query.Error != nil {
-					log.Fatal(query.Error)
-					return
-				}
+				server := getServer(args)
+
 				err = ec2.DestroyInstance(server.InstanceId)
 				if err != nil {
 					log.Fatal(err)
 					return
 				}
 				model.DB.Delete(&server)
-
 			},
 		},
 	}

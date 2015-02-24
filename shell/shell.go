@@ -12,6 +12,7 @@ import (
 
 type shellScript struct {
 	body string
+	kind string
 }
 
 func (s *shellScript) addDependencies() {
@@ -51,7 +52,7 @@ go get ./...
 `
 }
 
-func (s *shellScript) initServerByKind(kind string) {
+func (s *shellScript) initServer() {
 	s.body += `
 cd /home/ubuntu/
 source .profile
@@ -129,9 +130,17 @@ func Initialize(kind string, server *model.Server) error {
 	var err error
 	var script shellScript
 
+	if kind == "xiaolong" {
+		stringId, err := strconv.Itao(int(server.Id))
+		if err != nil {
+			panic(err)
+		}
+		script.body = genEnvVarString("SERVER_ID", stringId)
+	}
+
 	script.addDependencies()
 	script.setupGitbao()
-	script.initServerByKind(kind)
+	script.initServer()
 
 	session, err := sshConnect(server.Ip)
 	session.Stdout = os.Stdout
@@ -150,12 +159,13 @@ func Initialize(kind string, server *model.Server) error {
 	return nil
 }
 
-func Update(kind string, server *model.Server) error {
+func Update(server *model.Server) error {
 	var err error
 	var script shellScript
 
-	script.body = "killall " + kind + "\n echo \"process killed\""
-	script.initServerByKind(kind)
+	script.kind = server.kind
+	script.body = "killall " + server.kind + "\n echo \"process killed\""
+	script.initServer()
 
 	session, err := sshConnect(server.Ip)
 	session.Stdout = os.Stdout
