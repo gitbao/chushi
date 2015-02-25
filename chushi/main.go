@@ -15,10 +15,10 @@ import (
 )
 
 const (
-	isProduction = false
+	isProduction = true
 )
 
-func getServer(args) (server model.Server) {
+func getServer(args []string) (server model.Server) {
 	serverId, err := strconv.Atoi(args[0])
 	if err != nil {
 		log.Fatal(err)
@@ -33,6 +33,7 @@ func getServer(args) (server model.Server) {
 }
 
 func main() {
+
 	err := model.DB.DB().Ping()
 	if err != nil {
 		fmt.Println("Error pinging database. Do you have a postgres database set up called chushi?")
@@ -43,6 +44,7 @@ func main() {
 		model.Close()
 		model.Connect()
 	}
+
 	app := cli.NewApp()
 	app.Name = "Chushi"
 	app.Usage = "The bao chef. Configures and manages the kitchen, routers, and xialongbao"
@@ -85,6 +87,18 @@ func main() {
 			},
 		},
 		{
+			Name:      "ssh",
+			ShortName: "n",
+			Usage:     "spin up a new ec2 server",
+			Action: func(c *cli.Context) {
+				args := c.Args()
+				server := getServer(args)
+
+				fmt.Printf("ssh-ing into %s: %s\n", server.Kind, server.Ip)
+				shell.Ssh(&server)
+			},
+		},
+		{
 			Name:      "assign",
 			ShortName: "a",
 			Usage:     "assign a server type to a server",
@@ -93,8 +107,7 @@ func main() {
 				server := getServer(args)
 
 				kind := args[1]
-				fmt.Println("Assigning a", kind, "server:")
-				fmt.Println("Created server with Id:", server.Id)
+				fmt.Println("Assigning a", kind, "server", "with id:", server.Id)
 				shell.Initialize(kind, &server)
 				server.Kind = kind
 				model.DB.Save(&server)
@@ -106,11 +119,15 @@ func main() {
 			Usage:     "update a server",
 			Action: func(c *cli.Context) {
 				args := c.Args()
-
+				var hard bool
+				if len(args) > 1 && args[1] == "hard" {
+					hard = true
+					fmt.Println("Running hard update.")
+				}
 				server := getServer(args)
 
 				fmt.Println("Created server with Id:", server.Id)
-				shell.Update(server.Kind, &server)
+				shell.Update(&server, hard)
 			},
 		},
 		{

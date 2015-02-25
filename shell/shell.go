@@ -1,10 +1,13 @@
 package shell
 
 import (
+	"fmt"
 	"io/ioutil"
 	"log"
 	"os"
+	"os/exec"
 	"os/user"
+	"strconv"
 
 	"github.com/gitbao/gitbao/model"
 	"golang.org/x/crypto/ssh"
@@ -17,12 +20,16 @@ type shellScript struct {
 
 func (s *shellScript) addDependencies() {
 	s.body += `
+touch .profile
 export DEBIAN_FRONTEND=noninteractive
 sudo apt-get update
 sudo apt-get -y install golang
-sudo apt-get -y install git
-sudo apt-get -y install nginx
-`
+sudo apt-get -y install git`
+	if s.kind == "xiaolong" {
+		s.body += "\nsudo apt-get -y install docker.io\n"
+	} else {
+		s.body += "\nsudo apt-get -y install nginx\n"
+	}
 }
 
 func (s *shellScript) addEnvVariables() {
@@ -47,8 +54,19 @@ source .profile
 mkdir -p golang
 go get github.com/gitbao/gitbao
 cd /home/ubuntu/golang/src/
-sudo rm /etc/nginx/sites-enabled/default
 go get ./...
+`
+	if s.kind != "xiaolong" {
+		s.body += "sudo rm /etc/nginx/sites-enabled/default\n"
+	}
+}
+
+func (s *shellScript) prepareForUpdate() {
+	s.body += `
+source .profile
+rm -rf /home/ubuntu/golang/src/github.com/gitbao
+go get github.com/gitbao/gitbao
+cd /home/ubuntu/golang/src/
 `
 }
 
@@ -56,9 +74,8 @@ func (s *shellScript) initServer() {
 	s.body += `
 cd /home/ubuntu/
 source .profile
-go get -u github.com/gitbao/gitbao
 `
-	switch kind {
+	switch s.kind {
 
 	case "kitchen":
 		s.body += `
@@ -80,6 +97,14 @@ touch server.log
 /home/ubuntu/golang/bin/router > server.log 2>&1 &
 sudo service nginx restart
 `
+	case "xiaolong":
+		s.body += `
+go install github.com/gitbao/gitbao/cmd/xiaolong
+cd /home/ubuntu/golang/src/github.com/gitbao/gitbao/cmd/xiaolong/
+touch server.log
+/home/ubuntu/golang/bin/xiaolong > server.log 2>&1 &
+`
+
 	}
 }
 
@@ -130,8 +155,10 @@ func Initialize(kind string, server *model.Server) error {
 	var err error
 	var script shellScript
 
+	script.kind = kind
+
 	if kind == "xiaolong" {
-		stringId, err := strconv.Itao(int(server.Id))
+		stringId := strconv.Itoa(int(server.Id))
 		if err != nil {
 			panic(err)
 		}
@@ -142,6 +169,7 @@ func Initialize(kind string, server *model.Server) error {
 	script.setupGitbao()
 	script.initServer()
 
+	fmt.Println(script.body)
 	session, err := sshConnect(server.Ip)
 	session.Stdout = os.Stdout
 	session.Stderr = os.Stderr
@@ -159,12 +187,17 @@ func Initialize(kind string, server *model.Server) error {
 	return nil
 }
 
-func Update(server *model.Server) error {
+func Update(server *model.Server, hard bool) error {
 	var err error
 	var script shellScript
 
-	script.kind = server.kind
-	script.body = "killall " + server.kind + "\n echo \"process killed\""
+	if hard == true {
+		script.body += "\n sudo rm -rf /home/ubuntu/golang/src/github.com/gitbao/gitbao"
+	}
+	script.kind = server.Kind
+	script.body += "killall " + server.Kind + "\n echo \"process killed\""
+
+	script.prepareForUpdate()
 	script.initServer()
 
 	session, err := sshConnect(server.Ip)
@@ -195,4 +228,16 @@ func Logs(server *model.Server) {
 	session.Close()
 
 	return
+}
+
+func Ssh(server *model.Server) {
+	home := os.Getenv("HOME")
+	cmd := exec.Command("ssh", "-i", home+"/dev.pem", "ubuntu@"+server.Ip)
+	cmd.Stdin = os.Stdin
+	cmd.Stderr = os.Stderr
+	cmd.Stdout = os.Stdout
+	err := cmd.Run()
+	if err != nil {
+		log.Fatal(err)
+	}
 }
