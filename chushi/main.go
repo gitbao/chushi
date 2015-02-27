@@ -71,6 +71,19 @@ func main() {
 					fmt.Fprintf(totals, "%d\t%s\t%s\t%s\n", value.Id, value.InstanceId, value.Kind, value.Ip)
 				}
 				tm.Println(totals)
+
+				var dockers []model.Docker
+				query = model.DB.Find(&dockers)
+				if query.Error != nil {
+					log.Fatal(query.Error)
+				}
+				totals = tm.NewTable(0, 10, 5, ' ', 0)
+				fmt.Fprintf(totals, "Id\tServerId\tDockerId\n")
+
+				for _, value := range dockers {
+					fmt.Fprintf(totals, "%d\t%d\t%s\n", value.Id, value.ServerId, value.DockerId)
+				}
+				tm.Println(totals)
 				tm.Flush()
 
 			},
