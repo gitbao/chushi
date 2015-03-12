@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"strconv"
+	"strings"
 
 	tm "github.com/buger/goterm"
 	"github.com/codegangsta/cli"
@@ -71,6 +72,7 @@ func main() {
 					fmt.Fprintf(totals, "%d\t%s\t%s\t%s\n", value.Id, value.InstanceId, value.Kind, value.Ip)
 				}
 				tm.Println(totals)
+				tm.Flush()
 
 				var dockers []model.Docker
 				query = model.DB.Find(&dockers)
@@ -81,7 +83,12 @@ func main() {
 				fmt.Fprintf(totals, "Id\tServerId\tDockerId\n")
 
 				for _, value := range dockers {
-					fmt.Fprintf(totals, "%d\t%d\t%s\n", value.Id, value.ServerId, value.DockerId)
+
+					// docker ids have accidental whitespace, need to remove it
+					dockerId := strings.Replace(value.DockerId, " ", "", -1)
+					dockerId = strings.Replace(dockerId, "\n", "", -1)
+
+					fmt.Fprintf(totals, "%d\t%d\t%s\n", value.Id, value.ServerId, dockerId)
 				}
 				tm.Println(totals)
 				tm.Flush()
@@ -185,6 +192,8 @@ func main() {
 					log.Fatal(err)
 					return
 				}
+				model.DB.Where("server_id = ?", server.Id).Delete(model.Docker{})
+				model.DB.Where("server_id = ?", server.Id).Delete(model.Bao{})
 				model.DB.Delete(&server)
 			},
 		},
